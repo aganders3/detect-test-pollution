@@ -21,9 +21,8 @@ PYTEST_OPTIONS = (
     '-p', __name__,
     # disable known test-randomization plugins
     '-p', 'no:randomly',
-    # we don't read the output at all
-    '--quiet', '--quiet',
 )
+VERBOSE = 0
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -74,10 +73,17 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def _run_pytest(*args: str) -> None:
-    # XXX: this is potentially difficult to debug? maybe --verbose?
+    global VERBOSE
+    pytest_options = PYTEST_OPTIONS
+    if VERBOSE == 0:
+        # we don't read the output at all
+        pytest_options += ('--quiet', '--quiet')
+    elif VERBOSE > 1:
+        pytest_options += ('-' + 'v' * (VERBOSE - 1),)
+
     subprocess.check_call(
-        (sys.executable, '-mpytest', *PYTEST_OPTIONS, *args),
-        stdout=subprocess.DEVNULL,
+        (sys.executable, '-mpytest', *pytest_options, *args),
+        stdout=None if VERBOSE else subprocess.DEVNULL,
     )
 
 
@@ -195,7 +201,7 @@ def _fuzz(
             return 1
 
 
-def _bisect(testpath: str, failing_test: str, testids: list[str]) -> int:
+def _bisect(testpath: str, failing_test: str, testids: list[str], *, thorough: bool) -> int:
     if failing_test not in testids:
         print('-> failing test was not part of discovered tests!')
         return 1
@@ -232,14 +238,39 @@ def _bisect(testpath: str, failing_test: str, testids: list[str]) -> int:
         part1 = testids[:pivot]
         part2 = testids[pivot:]
 
-        if _passed_with_testlist(testpath, failing_test, part1):
+        part1_passed = _passed_with_testlist(testpath, failing_test, part1)
+
+        if part1_passed:
             testids = part2
         else:
             testids = part1
 
+        # step 4.5: make sure it still fails with the other partition
+        if thorough:
+            part2_passed = _passed_with_testlist(testpath, failing_test, part2)
+
+            both_passed = part1_passed and part2_passed
+            both_failed = not part1_passed and not part2_passed
+
+            if both_passed:
+                print('-> test passed in both partitions!')
+            elif both_failed:
+                print('-> test failed in both partitions!')
+
+            if both_passed or both_failed:
+                if VERBOSE:
+                    print('-> test group part 1:')
+                    print('\n\t'.join(part1))
+                    print('-> test group part 2:')
+                    print('\n\t'.join(part2))
+                return 1
+
     # step 5: make sure it still fails
     print('double checking we found it...')
     if _passed_with_testlist(testpath, failing_test, testids):
+        if VERBOSE:
+            print('-> test group:')
+            print('\n\t'.join(testids))
         raise AssertionError('unreachable? unexpected pass? report a bug?')
     else:
         print(f'-> the polluting test is: {testids[0]}')
@@ -272,7 +303,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         '--testids-file',
         help='optional pre-discovered test ids (one per line)',
     )
+
+    parser.add_argument(
+        '--verbose',
+        '-v',
+        action='count',
+        default=0,
+        help='show additional output (twice to show all pytest output)',
+    )
+
+    parser.add_argument(
+        '--thorough',
+        action='store_true',
+        help='confirm test failure with each iteration (slower, requires --failing-test)',
+    )
     args = parser.parse_args(argv)
+
+    if args.thorough and args.fuzz:
+        parser.error('sorry, --thorough does not work with --fuzz')
+
+    global VERBOSE
+    VERBOSE = args.verbose
 
     # step 1: discover all the tests
     print('discovering all tests...')
@@ -288,7 +339,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.fuzz:
         return _fuzz(testpath, testids, args.tests, args.testids_file)
     else:
-        return _bisect(testpath, args.failing_test, testids)
+        return _bisect(testpath, args.failing_test, testids, thorough=args.thorough)
 
 
 if __name__ == '__main__':
