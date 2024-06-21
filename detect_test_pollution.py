@@ -75,9 +75,8 @@ def pytest_configure(config: pytest.Config) -> None:
 def _run_pytest(*args: str) -> None:
     global VERBOSE
     pytest_options = PYTEST_OPTIONS
-    if VERBOSE < 2:
-        # we don't read the output at all
-        pytest_options += ('--quiet',) * (2 - VERBOSE)
+    if VERBOSE < 3:
+        pytest_options += ('--quiet',) * (3 - VERBOSE)
     elif VERBOSE > 2:
         pytest_options += ('--verbose',) * (VERBOSE - 2)
 
@@ -260,9 +259,9 @@ def _bisect(testpath: str, failing_test: str, testids: list[str], *, thorough: b
             if both_passed or both_failed:
                 if VERBOSE:
                     print('-> test group part 1:')
-                    print('\n\t'.join(part1))
+                    print('\t' + '\n\t'.join(part1))
                     print('-> test group part 2:')
-                    print('\n\t'.join(part2))
+                    print('\t' + '\n\t'.join(part2))
                 return 1
 
     # step 5: make sure it still fails
@@ -270,7 +269,7 @@ def _bisect(testpath: str, failing_test: str, testids: list[str], *, thorough: b
     if _passed_with_testlist(testpath, failing_test, testids):
         if VERBOSE:
             print('-> test group:')
-            print('\n\t'.join(testids))
+            print('\t' + '\n\t'.join(testids))
         raise AssertionError('unreachable? unexpected pass? report a bug?')
     else:
         print(f'-> the polluting test is: {testids[0]}')
