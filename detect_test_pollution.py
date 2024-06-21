@@ -75,11 +75,11 @@ def pytest_configure(config: pytest.Config) -> None:
 def _run_pytest(*args: str) -> None:
     global VERBOSE
     pytest_options = PYTEST_OPTIONS
-    if VERBOSE == 0:
+    if VERBOSE < 2:
         # we don't read the output at all
-        pytest_options += ('--quiet', '--quiet')
-    elif VERBOSE > 1:
-        pytest_options += ('-' + 'v' * (VERBOSE - 1),)
+        pytest_options += ('--quiet',) * (2 - VERBOSE)
+    elif VERBOSE > 2:
+        pytest_options += ('--verbose',) * (VERBOSE - 2)
 
     subprocess.check_call(
         (sys.executable, '-mpytest', *pytest_options, *args),
